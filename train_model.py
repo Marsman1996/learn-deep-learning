@@ -17,7 +17,7 @@ NUM_LABELS = 10
 EVAL_BATCH_SIZE = 64
 SEED = 66478  # Set to None for random seed.
 EVAL_FREQUENCY = 100  # Number of steps between evaluations.
-VALIDATION_SIZE = 5000  # Size of the validation set.
+VALIDATION_SIZE = 5000  # 验证集大小
 NUM_EPOCHS = 10
 
 tf.app.flags.DEFINE_boolean("self_test", False, "True if running a self test.")
@@ -229,7 +229,9 @@ def main(argv=None):
         print('Test error: %.1f%%' % test_error)
         print("Save model")
         # saver.save(sess, "model/mnist", global_step=step)
-        
+        builder = tf.saved_model.builder.SavedModelBuilder("model")
+        builder.add_meta_graph_and_variables(sess, ['mnist'])
+        builder.save()
         if FLAGS.self_test:
             print('test_error', test_error)
             assert test_error == 0.0, 'expected 0.0 test_error, got %.2f' % (
