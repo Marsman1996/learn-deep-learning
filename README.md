@@ -1,8 +1,23 @@
-# MNIST
+# MNIST <!-- omit in toc -->
 [MINIST](http://deeplearning.net/tutorial/gettingstarted.html)是一个手写数字图片数据集, 本次实验使用MINIST作为数据集进行手写数字识别训练.
+
+## Index <!-- omit in toc -->
+- [导入数据](#导入数据)
+- [建立模型](#建立模型)
+  - [卷积层(C1)](#卷积层c1)
+  - [池化层(S2)](#池化层s2)
+  - [输入层(C3)](#输入层c3)
+  - [池化层(S4)](#池化层s4)
+  - [全连接层(F5)](#全连接层f5)
+  - [Dropout层(D6)](#dropout层d6)
+  - [全连接层(F7)](#全连接层f7)
+- [训练模型](#训练模型)
+- [评估模型](#评估模型)
+- [附录: Tensorflow安装](#附录-tensorflow安装)
 
 ## 导入数据
 训练集(train-images-idx3-ubyte)数据头部如表所示:  
+
 |  offset  |      type      |      value       |    description    |
 | :------: | :------------: | :--------------: | :---------------: |
 |   0000   | 32 bit integer | 0x00000803(2051) |   magic number    |
@@ -15,6 +30,7 @@
 |   xxxx   | unsigned byte  |        ??        |       pixel       |
 
 测试集(t10k-labels-idx1-ubyte)标签头部如图所示:  
+
 | [offset] |     [type]     |     [value]      |      [description]       |
 | :------: | :------------: | :--------------: | :----------------------: |
 |   0000   | 32 bit integer | 0x00000801(2049) | magic number (MSB first) |
@@ -23,19 +39,20 @@
 |   0009   | unsigned byte  |        ??        |          label           |
 | ........ |
 |   xxxx   | unsigned byte  |        ??        |          label           |
+
 > The labels values are 0 to 9.
 
 因此图像部分头部占16字节, 分别为魔数, 图片数量, 图片像素行, 图片像素列. 标签部分头部占8字节, 分别为魔数, 标签数量. 因此将提供的`.gz`压缩文件使用`gzip.open()`函数按字节流形式打开后按照上表将对应参数读取出来. 同时将读取出来的图片数据划分为验证集和数据集, 在这里设置验证集为5000张图片.
 
 ## 建立模型
-此处使用的是一个简单的, 端到端的类[LeNet-5](http://yann.lecun.com/exdb/lenet/)卷积模型. LeNet5模型如图所示  
-![LeNet-5](img/LeNet5.png)  
+此处使用的是一个简单的, 端到端的类[LeNet-5](http://yann.lecun.com/exdb/lenet/)卷积模型. 该模型如图所示  
+![model](img/model.png)  
 <!-- ### 输入层(INPUT) -->
 ### 卷积层(C1)
 
 ```python
 self.conv1_weights = tf.Variable(
-    tf.truncated_normal([5, 5, NUM_CHANNELS, 32],  # 5x5 filter, depth 32.
+    tf.truncated_normal([5, 5, NUM_CHANNELS, 32],
     stddev=0.1,
     seed=SEED))
 self.conv1_biases = tf.Variable(tf.zeros([32]))
@@ -44,7 +61,7 @@ conv = tf.nn.conv2d(data,
     self.conv1_weights,
     strides=[1, 1, 1, 1],
     padding='SAME')
-# 偏置和ReLU非线性激活
+
 relu = tf.nn.relu(tf.nn.bias_add(conv, self.conv1_biases))
 ```
 
@@ -99,7 +116,6 @@ pool = tf.nn.max_pool(relu,
 
 ```python
 self.fc1_weights = tf.Variable(
-    # fully connected, depth 512.
     tf.truncated_normal([IMAGE_SIZE // 4 * IMAGE_SIZE // 4 * 64, 512],
     stddev=0.1,
     seed=SEED))
@@ -137,10 +153,51 @@ tf.matmul(hidden, self.fc2_weights) + self.fc2_biases
 
 ## 训练模型
 
+```python
+# 损失计算（+L2正则化）
+loss = tf.reduce_mean(tf.nn.sparse_softmax_cross_entropy_with_logits(
+        labels=train_labels_node, logits=logits))
+## L2正则化损失
+regularizers = (tf.nn.l2_loss(model.fc1_weights) + tf.nn.l2_loss(model.fc1_biases) +
+                tf.nn.l2_loss(model.fc2_weights) + tf.nn.l2_loss(model.fc2_biases))
+## 总损失=样本损失+L2正则化损失
+loss += 5e-4 * regularizers
+
+# 优化器（用于参数更新）
+## 设置一个每批增加一次的变量，并控制学习率衰减。
+batch = tf.Variable(0)
+## 每个时期衰减一次，使用从0.01开始的指数衰减。
+learning_rate = tf.train.exponential_decay(
+    0.01,                # Base learning rate.
+    batch * BATCH_SIZE,  # Current index into the dataset.
+    train_size,          # Decay step.
+    0.95,                # Decay rate.
+    staircase=True)
+## 用momentum优化器优化
+optimizer = tf.train.MomentumOptimizer(learning_rate, 0.9).minimize(loss, global_step=batch)
+
+# 将数据送入计算图
+feed_dict = {train_data_node: batch_data,
+            train_labels_node: batch_labels}
+# 运行优化器进行参数更新
+sess.run(optimizer, feed_dict=feed_dict)
+```
+
 ## 评估模型
 
+```python
+# 运行计算图得到评估信息
+if step % EVAL_FREQUENCY == 0:
+    l, lr, predictions = sess.run([loss, learning_rate, train_prediction], feed_dict=feed_dict)
+
+# 测试输出结果模型准确率
+test_error = error_rate(eval_in_batches(test_data, sess, eval_prediction, eval_data), test_labels)
+```
+
+运行时输出见 *log/2019-4-2-1815.log* . 最终训练出模型准确率为99.3%.
+
 ## 附录: Tensorflow安装
-我是在Anaconda下进行tensorflow的安装的, 它可以方便的管理各种环境
+我是在Anaconda下进行tensorflow的安装的, 它可以方便的管理各种环境.
 
 0. 需要安装[Anaconda](https://www.anaconda.com/), [CUDA](https://developer.nvidia.com/cuda-toolkit-archive)和[CuDNN](https://developer.nvidia.com/rdp/cudnn-download)
 
@@ -148,4 +205,3 @@ tf.matmul(hidden, self.fc2_weights) + self.fc2_biases
 
 1. `conda create -n tf1.12 python=3.6` 创建一个python版本为3.6的虚拟环境, 这是为了方便日后安装多个版本的tensorflow或是其他软件而不冲突.
 2. `pip install tensorflow-gpu==1.12.0` 安装tensorflow
-3. 
